@@ -1,0 +1,278 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CAPTAIN
+  PLAYER
+}
+
+enum InviteType {
+  CAPTAIN
+  PLAYER
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BANNED
+}
+
+enum LeagueStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  FINISHED
+  CANCELLED
+}
+
+enum EventType {
+  GOAL
+  YELLOW_CARD
+  RED_CARD
+  SUBSTITUTION
+  OWN_GOAL
+}
+
+model User {
+  id           String    @id @default(uuid())
+  fullName     String
+  phone        String?   @unique
+  email        String    @unique
+  passwordHash String
+  avatarUrl    String?
+  role         UserRole  @default(PLAYER)
+  status       String    @default("ACTIVE")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  organizedLeagues League[]        @relation("LeagueOrganizer")
+  captainTeams     Team[]          @relation("TeamCaptain")
+  memberships      TeamMembership[]
+  playerProfile    Player?
+  notifications    Notification[]
+  payments         Payment[]
+}
+
+model Role {
+  id          String          @id @default(uuid())
+  name        String          @unique
+  description String?
+  permissions RolePermission[]
+}
+
+model Permission {
+  id     String          @id @default(uuid())
+  slug   String          @unique
+  name   String
+  roles  RolePermission[]
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
+
+model League {
+  id          String       @id @default(uuid())
+  organizerId String
+  name        String
+  description String?
+  sportType   String       @default("FOOTBALL")
+  maxTeams    Int          @default(8)
+  status      LeagueStatus @default(DRAFT)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime     @default(now())
+
+  organizer User             @relation("LeagueOrganizer", fields: [organizerId], references: [id])
+  teams     Team[]
+  invites   LeagueInvite[]
+  matches   Match[]
+  standings Standing[]
+
+  @@index([organizerId])
+}
+
+model LeagueInvite {
+  id         String     @id @default(uuid())
+  leagueId   String
+  createdBy  String
+  code       String     @unique
+  inviteType InviteType
+  teamId     String?
+  expiresAt  DateTime?
+  usedBy     String?
+  status     String     @default("ACTIVE")
+  createdAt  DateTime   @default(now())
+
+  league League @relation(fields: [leagueId], references: [id])
+}
+
+model Team {
+  id             String    @id @default(uuid())
+  leagueId       String
+  name           String
+  logoUrl        String?
+  primaryColor   String?
+  secondaryColor String?
+  captainId      String
+  status         String    @default("ACTIVE")
+  createdAt      DateTime  @default(now())
+
+  league      League            @relation(fields: [leagueId], references: [id])
+  captain     User              @relation("TeamCaptain", fields: [captainId], references: [id])
+  memberships TeamMembership[]
+  homeMatches Match[]           @relation("HomeTeamMatches")
+  awayMatches Match[]           @relation("AwayTeamMatches")
+  standings   Standing[]
+  payments    Payment[]
+
+  @@unique([leagueId, name])
+}
+
+model TeamMembership {
+  id               String           @id @default(uuid())
+  teamId           String
+  userId           String
+  membershipStatus MembershipStatus @default(PENDING)
+  jerseyNumber     Int?
+  position         String?
+  joinedAt         DateTime?
+
+  team Team @relation(fields: [teamId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([teamId, userId])
+}
+
+model Player {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  preferredFoot String?
+  position      String?
+  heightCm      Int?
+  weightKg      Int?
+  bio           String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Venue {
+  id          String   @id @default(uuid())
+  organizerId String
+  name        String
+  city        String?
+  address     String?
+  capacity    Int?
+  status      String   @default("ACTIVE")
+
+  matches Match[]
+}
+
+model Match {
+  id           String      @id @default(uuid())
+  leagueId     String
+  homeTeamId   String
+  awayTeamId   String
+  venueId      String?
+  scheduledAt  DateTime
+  status       MatchStatus @default(SCHEDULED)
+  homeScore    Int         @default(0)
+  awayScore    Int         @default(0)
+  winnerTeamId String?
+  createdAt    DateTime    @default(now())
+
+  league   League @relation(fields: [leagueId], references: [id])
+  homeTeam Team   @relation("HomeTeamMatches", fields: [homeTeamId], references: [id])
+  awayTeam Team   @relation("AwayTeamMatches", fields: [awayTeamId], references: [id])
+  venue    Venue? @relation(fields: [venueId], references: [id])
+  events   MatchEvent[]
+
+  @@unique([leagueId, homeTeamId, awayTeamId, scheduledAt])
+}
+
+model Standing {
+  id             String   @id @default(uuid())
+  leagueId       String
+  teamId         String
+  played         Int      @default(0)
+  won            Int      @default(0)
+  draw           Int      @default(0)
+  lost           Int      @default(0)
+  goalsFor       Int      @default(0)
+  goalsAgainst   Int      @default(0)
+  goalDifference Int      @default(0)
+  points         Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  league League @relation(fields: [leagueId], references: [id])
+  team   Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([leagueId, teamId])
+}
+
+model MatchEvent {
+  id          String    @id @default(uuid())
+  matchId     String
+  teamId      String
+  playerId    String?
+  eventType   EventType
+  minute      Int
+  description String?
+  createdAt   DateTime  @default(now())
+
+  match Match @relation(fields: [matchId], references: [id])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  userId        String
+  teamId        String?
+  amount        Float
+  status        String   @default("PENDING")
+  paymentMethod String?
+  transactionId String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  team Team? @relation(fields: [teamId], references: [id])
+}

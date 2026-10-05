@@ -1,0 +1,67 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: league_postgres
+    environment:
+      POSTGRES_USER: league_user
+      POSTGRES_PASSWORD: league_password
+      POSTGRES_DB: league_db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - league_postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U league_user -d league_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - league_network
+    restart: unless-stopped
+
+  # PgAdmin (Database Management UI) - Optional
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: league_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@league.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - league_network
+    restart: unless-stopped
+
+  # Redis Cache (Optional - for future caching layer)
+  redis:
+    image: redis:7-alpine
+    container_name: league_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - league_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - league_network
+    restart: unless-stopped
+
+volumes:
+  league_postgres_data:
+    driver: local
+  league_redis_data:
+    driver: local
+
+networks:
+  league_network:
+    driver: bridge
